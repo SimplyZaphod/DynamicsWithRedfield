@@ -1,0 +1,30 @@
+if test -z "$1"
+then
+    ls *.inp
+    echo "Select the input for the system"
+    INPUT=
+else
+    INPUT=$1
+fi
+INPUT=${INPUT%'.inp'}
+if test -z "$2"
+then
+    tdir=$INPUT
+else
+    tdir=$2
+fi
+xyz=$(head -n1 $INPUT.inp)
+
+rm -r $tdir 
+mkdir $tdir
+cp SpinCurrent.e $INPUT.inp $xyz $tdir
+cd $tdir 
+
+./SpinCurrent.e <<EOF > prova.out &
+$INPUT.inp
+$INPUT.xyz
+EOF
+sleep 1
+cd ..
+
+   
