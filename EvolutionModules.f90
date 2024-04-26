@@ -306,7 +306,7 @@ module Evolutions
         if(present(name))then
             if(name.ne."*")then
                 open(1, file=name)
-                do i=0, timesteps-1
+                do i=0, timesteps-1, 1
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)
                     write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
@@ -317,7 +317,7 @@ module Evolutions
                 write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
                 close(1)
             else
-                do i=0, timesteps-1
+                do i=0, timesteps-1, 1
                     write(*,"(A, F,A,F)") 'Time: ', Deltat*i, 'trace=', real(trace_complex(rho, dim))
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)

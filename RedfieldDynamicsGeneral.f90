@@ -86,6 +86,8 @@ program RedfieldDA
     end if
     write(*,*) "Before the evolution"
     call write_matrix_complex(rho, dimension, dimension, 'e9.2')
+    write(*,*) 'Initial population'
+    write(*,'(<dimension>(F6.3, X))') (real(rho(i,i)), i=1, dimension)
     write(*,*) 'Select the dynamics!'
     if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
         call EvolveWithRungeKuttaUnitary(rho, H, dimension, Deltat, timesteps, '*')
@@ -99,6 +101,11 @@ program RedfieldDA
     end if
     write(*,*) "After the evolution"
     call write_matrix_complex(rho, dimension, dimension, 'e9.2')
+    write(*,*) 'Final population'
+    write(*,'(<dimension>(F6.3, X))') (real(rho(i,i)), i=1, dimension)
+    open(1, file='rho_final.dat', form='unformatted')
+    write(1) rho
+    close(1)
     write(*,*) 'End program!'
 contains
     subroutine ReadInput(name, dim, rho, H, a1, a2, verbose)

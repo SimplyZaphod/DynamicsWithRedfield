@@ -59,6 +59,8 @@ program RedfieldCorr
     write(*,*) 'Write the generating function'
     call commutator_complex(rho, op2, rho, dimension)
     rho = -imagine*rho
+!    call npmatmul_complex(rho, op2, rho, dimension, dimension, dimension)
+
     write(*,*) 'Select the dynamics!'
     call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
 
