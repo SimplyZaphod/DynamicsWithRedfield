@@ -1,7 +1,7 @@
 import sys
 
 import numpy as np
-from scipy.fft import fftfreq, fft
+from scipy.fft import fftfreq, fft, fftshift
 from scipy.fft import ifft
 from scipy import integrate
 import matplotlib.pyplot as plt
@@ -13,7 +13,7 @@ def DFT(fx, t, e, n_t=1):
     dt = t[1]-t[0]
     y = np.zeros((len(fx)), dtype='complex')
     for i in range(0, len(fx), n_t):
-        y[i] = integrate.simpson(fx*np.exp(-1j*t*e[i]/0.65), t, dx=dt)
+        y[i] = integrate.simpson(fx*np.exp(-1j*t*e[i]), t, dx=dt)
     return y
 
 def rescale_mean(y):
@@ -54,38 +54,40 @@ for i in range(1, len(sys.argv)):
     y = a[:,1] + 1j*a[:,2]
 
     y = rescale_minmax(y)
-
-    y *= np.exp(-0.02 * x)
+    x,y = reorder(x, y)
+    y *= np.exp(-0.05 * np.abs(x))
 
     # x, y = mirroring(x, y)
     # BH = signal.blackmanharris(len(y))
     # y*= BH
+    
     plt.subplot(gs[0,:])
     plt.plot(x, np.real(y), label=f'Re({name})')
     plt.scatter(x, np.imag(y),s=0.1, label=f'Im({name})')
-    plt.xlim(0,50)
+    # plt.xlim(0,50)
+    e = np.linspace(-10., 10., len(y))
+    ffty = DFT(y, x, e,n_t=20)
+    e = e*0.658
 
-    # e = np.linspace(-25., 25., len(y))
-    # ffty = DFT(y, x, e,n_t=50)
-
-    ffty = fft(y)
-    e = fftfreq(len(x), x[1]-x[0])*2*np.pi
-
-    e, ffty = reorder(e, ffty)
+    # ffty = fft(y)
+    # dt = x[1]-x[0]
+    # e = fftfreq(len(x), dt)
+    # ffty = fftshift(ffty)
+    # e = fftshift(e)
 
     if(False):
         ffty = square_ffty(ffty)
         plt.subplot(gs[1,:])
         plt.plot(e,np.real(ffty), label=f'Re({name})')
-        plt.xlim(0,3)
+        plt.xlim(-1,1)
     else:
         plt.subplot(gs[1, 0])
         plt.plot(e, np.real(ffty), label=f'Re({name})')
-        plt.xlim(-5, 5)
+        plt.xlim(-4, 4)
         # plt.xlim(0,1.5)
         plt.subplot(gs[1, 1])
         plt.plot(e, np.imag(ffty), label=f'Im({name})')
-        plt.xlim(-5, 5)
+        plt.xlim(-4, 4)
 
 plt.subplot(gs[0,:])
 plt.legend()

@@ -39,7 +39,7 @@ contains
         close(1)
     end subroutine load_time_evolution_input
 
-    subroutine ReadTimeEvolutionInput(nameinput,deltat, timesteps, n_dt, DynType,T, densitytype, gammatype, omega_g)
+    subroutine ReadTimeEvolutionInput(nameinput,deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
         !> From where I need to read the information
         character(len=*), intent(in) :: nameinput
         !> doubleprecision Timestep
@@ -58,6 +58,9 @@ contains
         character(len=100), intent(out) :: GammaType
         !> doubleprecision constant in case of costant or Debye spectral density. Write whatever you want if emissive or radiation is requested
         doubleprecision, intent(out) :: omega_g
+        !> doubleprecision dispersion in case of Debye spectral density. Write whatever you want if emissive or radiation is requested
+        doubleprecision, intent(out) :: eta_g
+
 
         open(1, file=nameinput)
         read(1, *) deltat
@@ -67,17 +70,24 @@ contains
         read(1,*) T
         read(1,*) DensityType
         read(1,*) GammaType
-        read(1,*) omega_g
+        if(GammaType.eq.'const')then
+            read(1,*) omega_g
+        elseif((GammaType.eq.'Debye').or.(GammaType.eq.'Db'))then
+            read(1,*) omega_g, eta_g
+        end if
 
         write(*,'(A, A30)') 'Time evolution parameters read from: ', nameinput
-        write(*,*) 'Deltat:', deltat,'fs, n° of timesteps:', timesteps
         write(*,'(A,F,A)') 'from t=0 to t=', deltat*(timesteps-1),' fs'
         write(*,*) 'I will save every ', n_dt,' snapshots'
         write(*,*) 'Integration method:', DynType
         write(*,'(A, F7.2,A)') 'Temperature: ', T, ' K'
         write(*,*) 'Type of density:', DensityType
         write(*,*) 'GammaType: ', GammaType
-        write(*,*) 'Eventual constant: ', omega_g
+        if(GammaType.eq.'const')then
+            write(*,'(A, e8.1)') 'Constant:', omega_g
+        elseif((GammaType.eq.'Debye').or.(GammaType.eq.'Db'))then
+            write(*,'(A, F7.4, A,F7.4)') 'omega_g: ',omega_g,', eta: ', eta_g
+        end if
         write(*,*) '========================================='
         close(1)
     end subroutine ReadTimeEvolutionInput
@@ -307,7 +317,12 @@ contains
         integer, intent(in) :: dim
         !> doublecomplex (dim,dim,dim,dim) redfield tensor
         doublecomplex, intent(inout) :: redfield(dim, dim, dim, dim)
+
         integer i,j,k,l
+
+        !$omp parallel do default(none), &
+        !$omp private(i,j,k,l), &
+        !$omp shared(redfield, dim)
         do i=1, dim
             do j=1, dim
                 if(i.ne.j) then
@@ -319,7 +334,38 @@ contains
                 end if
             end do
         end do
+        !$omp end parallel do
+
     end subroutine RotatingWaveApproximation_complex
+
+    !> This algotirhm execute the pseudo secular approximation on a redfield vector
+    subroutine PseudosecularApproximation_complex(redfield, w, thresh, dim)
+        !> integer dimension of the array
+        integer, intent(in) :: dim
+        !> doubleprecision (dim) vector of eigenvalues
+        doubleprecision, intent(in) :: w(dim)
+        !> doubleprecision threshold to cut the eigenvalues
+        doubleprecision, intent(in) :: thresh
+        !> doublecomplex (dim,dim,dim,dim) redfield tensor
+        doublecomplex, intent(inout) :: redfield(dim, dim, dim, dim)
+
+        integer i,j,k,l
+
+        !$omp parallel do default(none), &
+        !$omp private(i,j,k,l), &
+        !$omp shared(redfield, dim, thresh, w)
+        do i=1, dim
+            do j=1, dim
+                do k=1, dim
+                    do l=1, dim
+                        if(abs(w(i)-w(j)-w(k)+w(l)).gt.thresh) redfield(i,j,k,l) = (0.d0, 0.d0)
+                    end do
+                end do
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine PseudosecularApproximation_complex
 
     !> Create a Gamma spectral density with real constant amplitude and null imaginary amplitude
     subroutine GammaConstant(gammas,gamma, eigenvalues, dim)
@@ -334,6 +380,7 @@ contains
 
         integer i,j
         doubleprecision wastedouble1
+
         gammas = 0.d0
         do i=1, dim
             do j=1, dim
@@ -365,6 +412,31 @@ contains
             end do
         end do
     end subroutine GammaRadiationField
+
+
+        !> Create a Gamma spectral density with real amplitude with intensity proportional to the radiational field
+    !> @note the value are in femtosecond
+    subroutine GammaDebye(gammas, eigenvalues, dim, omega_c, eta)
+        integer, intent(in) :: dim
+        doubleprecision, intent(in) :: eigenvalues(dim)
+        doubleprecision, intent(inout) :: gammas(dim, dim)
+        doubleprecision, intent(in) :: omega_c
+        doubleprecision, intent(in) :: eta
+
+        integer i,j
+        doubleprecision hbar_evfs, wastedouble1
+
+        hbar_evfs = hbar_ev*1.d15
+        gammas = 0.d0
+        do i=1, dim
+            do j=1, dim
+                wastedouble1 = eigenvalues(i) - eigenvalues(j)
+                if(abs(wastedouble1).gt.1.d-14) then
+                    gammas(i,j) = eta*omega_c*wastedouble1/(omega_c**2 + wastedouble1**2)
+                end if
+            end do
+        end do
+    end subroutine GammaDebye
 
     !> Create a Gamma spectral density with Ohmic density
     subroutine GammaOhmic(gammas, eigenvalues, eta, omega_c, dim)
@@ -486,7 +558,9 @@ contains
         doubleprecision, intent(in) :: val(dim)
         !> doublecomplex Liovullian in Liouvillian space of dimension (dim**2, dim**2)
         doublecomplex ReturnKrylovLiouvillian_Complex(dim**2, dim**2)
+
         integer i,j,k,l, ij, kl
+
         ReturnKrylovLiouvillian_Complex = (0.d0, 0.d0)
         do i=1, dim
             do j=1, dim
@@ -536,7 +610,7 @@ contains
     !> L = -i/hbar [H, ...] + R:...
     !> to operate in a good way, I insert the commutator inside Redfield employing:
     !> <i|L|j> = sum_kl (R_ijkl -i/hbar \delta_jl H_ik + i/hbar \delta_ki H_lj) <k|...|l>
-    !> @note return value in seconds!
+    !> @note return value in femtoseconds!
     function Liouvillian_Complex(H,red,dim)
         !> integer dimension of the operators
         integer, intent(in) :: dim
@@ -548,16 +622,20 @@ contains
         doublecomplex, allocatable :: Liouvillian_Complex(:,:,:,:)
 
         integer i,j,k,l
+        doubleprecision hbar_evfs
+
+        hbar_evfs = hbar_ev*1.d15
         allocate(Liouvillian_Complex(dim, dim, dim, dim))
+
         do i=1, dim
             do j=1, dim
                 do k=1, dim
                    do l=1, dim
                        Liouvillian_Complex(i,j,k,l) = red(i,j,k,l)
                        if(j.eq.l) Liouvillian_Complex(i,j,k,l) = Liouvillian_Complex(i,j,k,l) - &
-                               imagine/hbar_ev * H(i,k)
+                               imagine/hbar_evfs * H(i,k)
                        if(i.eq.k) Liouvillian_Complex(i,j,k,l) = Liouvillian_Complex(i,j,k,l) + &
-                               imagine/hbar_ev * H(l,j)
+                               imagine/hbar_evfs * H(l,j)
                     end do
                 end do
             end do
@@ -573,9 +651,11 @@ contains
         doublecomplex, intent(in) :: Op(dim,dim,dim,dim)
         !> doublecomplex (dim**2, dim**2) matrix as output
         doublecomplex, allocatable :: ReturnSuperOperatorsInLiouvillian(:,:)
+
         integer i,j,ij,k,l,kl, dimsq
         dimsq = dim**2
         allocate(ReturnSuperOperatorsInLiouvillian(dimsq, dimsq))
+
         do i=1, dim
             do j=1, dim
                 ij = (i-1)*dim+j
@@ -598,6 +678,7 @@ contains
         doublecomplex, intent(in) :: Op(dim,dim)
         !> doublecomplex (dim**2) vector as output
         doublecomplex, allocatable :: ReturnOperatorsInLiouvillian(:)
+
         integer i,j,ij,dimsq
         dimsq = dim**2
         allocate(ReturnOperatorsInLiouvillian(dimsq))
@@ -650,7 +731,9 @@ contains
         doublecomplex,allocatable :: kspace(:,:), hessenberg(:,:),rhoone(:)
         doublecomplex, allocatable :: work(:),wmat(:,:),winv(:,:),lambda(:),coeffs(:),&
                 temp1(:),temp2(:,:),vl(:,:)
+
         allocate(kspace(dimsq,nkrylov), hessenberg(nkrylov,nkrylov),rhoone(dimsq))
+
         !!! Frobenius norm of the density matrix
         overlapc = (0.d0, 0.d0)
         do a = 1,dimsq
@@ -665,7 +748,7 @@ contains
         !!! BEGIN CONSTRUCTION OF KRYLOV SPACE
         hessenberg = (0.d0, 0.d0)
 
-        do jkr = 1,nkrylov
+        do jkr = 1, nkrylov
             !building rhoone
             rhoone = (0.d0,0.d0)
             !$omp parallel do default(none), &
@@ -736,7 +819,7 @@ contains
         allocate(work(2*nkrylov),rwork(2*nkrylov))
         call zgeev('N','V',nkrylov,hessenberg,nkrylov,lambda,vl,1,wmat,nkrylov,work,&
                 2*nkrylov,rwork,info)
-        !write(*,*) 'zgeev info ', info
+!        write(*,*) 'zgeev info ', info
         winv = wmat !saving wmat. winv, after zgetrf and zgetri, it will contain the inverse of wmat
         deallocate(work,rwork,vl)
         !!! end diagonalization of hessenberg matrix
@@ -744,10 +827,10 @@ contains
         !!! matrix inversion of W (here vr)
         allocate(ipiv(nkrylov,nkrylov))
         call zgetrf(nkrylov,nkrylov,winv,nkrylov,ipiv,info)
-        !write(*,*) 'zgetrf info', info
+!        write(*,*) 'zgetrf info', info
         allocate(work(nkrylov))
         call zgetri(nkrylov,winv,nkrylov,ipiv,work,nkrylov,info)
-        !write(*,*) 'zgetri info', info
+!        write(*,*) 'zgetri info', info
         deallocate(ipiv,work)
         !!! end matrix inversion
 
@@ -880,22 +963,12 @@ contains
                 M_U(i,j) = M_tot(i,j)
             end do
         end do
-        write(*,*) 'M_TOT'
-        call write_matrix_complex(M_tot, dimsq, dimsq, 'e7.1')
-        write(*,*) "M_L"
-        call write_matrix_complex(M_L, dimsq, dimsq, 'e7.1')
-        write(*,*) "M_U"
-        call write_matrix_complex(M_U, dimsq, dimsq, 'e7.1')
         deallocate(M_tot)
         !!!!!!!!!!!!!!!
         ! now I want to invers M_L and M_U
         !!!!!!!!!!!!!!!
         call ZTRTRI('U', 'N', dimsq, M_U, dimsq, info)
         call ZTRTRI('L', 'N', dimsq, M_L, dimsq, info)
-        write(*,*) "M_L"
-        call write_matrix_complex(M_L, dimsq, dimsq, 'e7.1')
-        write(*,*) "M_U"
-        call write_matrix_complex(M_U, dimsq, dimsq, 'e7.1')
         !!!!!!!!!!!!!!!!!!!
         !Finally I multiplicate the eigenvectors
         !I want L' = conjg(M_L-1 L).T and R' = RM_U-1
@@ -1026,93 +1099,146 @@ contains
 
     !> Unitary time evolution with the Runge-Kutta algorithm
     !> @note timestep and val must be inserted in femtosecond
-    subroutine Runge_Kutta_Unitary(rho,val, dim,timestep, n_timesteps)
+    subroutine Runge_Kutta_Unitary(rho,H, dim,timestep, n_timesteps)
         !> integer dimension of the operators
         integer, intent(in) :: dim
         !> complex operator or complex matrix of dimension(dim, dim) to be evolvedù
         doublecomplex, intent(inout) :: rho(dim,dim)
         !> doubleprecision timestep
         doubleprecision, intent(in) :: timestep
-        !> doubleprecision array of dimension (dim) with the eigenvalues
-        doubleprecision, intent(in) :: val(dim)
+        !> doublecomplex hamiltonian of dimension (dim, dim)
+        doublecomplex, intent(in) :: H(dim, dim)
         !> integer number of timesteps before the output
         integer, intent(in) :: n_timesteps
+
         integer i,j, i_time
-        doublecomplex drho(dim,dim), rho1(dim, dim)
+        doubleprecision hbar_evfs
+        doublecomplex, allocatable :: k1(:,:), rho_n(:,:)
+
+        hbar_evfs = hbar_ev*1.d15
+        allocate(k1(dim,dim), rho_n(dim,dim))
         do i_time=1, n_timesteps
             !k1
-            drho = drho_dt_unitary(rho, val, dim)
-            rho1 = rho + timestep*drho/6
+            call commutator_complex(k1, H, rho, dim)
+            k1 = -k1*imagine/hbar_evfs
+            rho_n = rho + timestep*k1/6
             !k2
-            drho = drho_dt_unitary(rho+timestep*drho/2, val, dim)
-            rho1 = rho1 + 2*timestep*drho/6
+            k1 = rho + timestep*k1/2
+            call commutator_complex(k1, H, k1, dim)
+            k1 = -k1*imagine/hbar_evfs
+            rho_n= rho_n + 2*timestep*k1/6
             !k3
-            drho = drho_dt_unitary(rho+timestep*drho/2, val, dim)
-            rho1 = rho1 + 2*timestep*drho/6
+            k1 = rho + timestep*k1/2
+            call commutator_complex(k1, H, k1, dim)
+            k1 = -k1*imagine/hbar_evfs
+            rho_n = rho_n + 2*timestep*k1/6
             !k4
-            drho = drho_dt_unitary(rho+timestep*drho, val, dim)
-            rho1 = rho1 + timestep*drho/6
+            k1 = rho + timestep*k1
+            call commutator_complex(k1, H, k1, dim)
+            k1 = -k1*imagine/hbar_evfs
+            rho_n = rho_n + timestep*k1/6
             !I completed the evolution!
-            rho = rho1
+            rho = rho_n
         end do
     end subroutine Runge_Kutta_Unitary
 
-    !> Calculate the unitary first derivative of the density matrix using Liouville equation
-    !> @note val must be inserted in femtosecond
-    function drho_dt_unitary(rho, val, dim)
-        !> integer dimension of rho and val
+    !> Unitary time evolution with the Runge-Kutta algorithm
+    !> @note timestep and val must be inserted in femtosecond
+    subroutine Runge_Kutta_Redfield(rho,H, red, dim,timestep, n_timesteps)
+        !> integer dimension of the operators
         integer, intent(in) :: dim
-        !> doublecomplex operator or complex matrix of dimension(dim, dim) to be evolved
-        doublecomplex, intent(in) :: rho(dim, dim)
-        !> doubleprecision array of dimension (dim) with the frequency of the eigenvalues
-        doubleprecision, intent(in) :: val(dim)
-        integer i,j,k,l,m
-        doublecomplex drho_dt_unitary(dim, dim)
-        do i=1, dim
-            do j=1, dim
-                drho_dt_unitary(i,j) = -imagine*(val(j)-val(i))*rho(i,j)
-            end do
-        end do
-    end function drho_dt_unitary
+        !> complex operator or complex matrix of dimension(dim, dim) to be evolvedù
+        doublecomplex, intent(inout) :: rho(dim,dim)
+        !> doublecomplex hamiltonian of dimension (dim, dim)
+        doublecomplex, intent(in) :: H(dim, dim)
+        !> complexredfield operator of dimension(dim, dim, dim, dim)
+        doublecomplex, intent(in) :: red(dim,dim, dim,dim)
+        !> doubleprecision timestep
+        doubleprecision, intent(in) :: timestep
+        !> integer number of timesteps before the output
+        integer, intent(in) :: n_timesteps
 
+        integer i,j, k,l,i_time
+        doubleprecision hbar_evfs
+        doublecomplex, allocatable :: k1(:,:), rho_n(:,:), y(:,:)
 
-    subroutine Runge_Kutta_Redfield_Comm(rho,comm, R_tens, dim,timestep, n_timesteps)
-        integer i,j, dim, i_time, n_timesteps
-        doubleprecision timestep,R_tens(dim, dim, dim, dim)
-        doublecomplex drho(dim,dim), rho(dim,dim), rho1(dim, dim), comm(dim, dim)
+        hbar_evfs = hbar_ev*1.d15
+        allocate(k1(dim,dim), rho_n(dim,dim), y(dim,dim))
         do i_time=1, n_timesteps
-            !k1
-            drho = drho_dt_comm(rho, comm, R_tens, dim)
-            rho1 = rho + timestep*drho/6
-            !k2
-            drho = drho_dt_comm(rho+timestep*drho/2, comm, R_tens, dim)
-            rho1 = rho1 + 2*timestep*drho/6
-            !k3
-            drho = drho_dt_comm(rho+timestep*drho/2, comm, R_tens, dim)
-            rho1 = rho1 + 2*timestep*drho/6
-            !k4
-            drho = drho_dt_comm(rho+timestep*drho, comm, R_tens, dim)
-            rho1 = rho1 + timestep*drho/6
-            !I completed the evolution!
-            rho = rho1
-        end do
-    end subroutine Runge_Kutta_Redfield_Comm
-
-    function drho_dt_comm(rho, comm, R_ten, dim)
-        integer dim, i,j,k,l,m
-        doubleprecision R_ten(dim, dim, dim, dim)
-        doublecomplex drho_dt_comm(dim, dim), rho(dim, dim), comm(dim, dim)
-        do i=1, dim
-            do j=1, dim
-                drho_dt_comm(i,j) = -imagine*comm(i,j)
-                do k=1, dim
-                    do l=1, dim
-                        drho_dt_comm(i,j) = drho_dt_comm(i,j) + R_ten(i,j,k,l)*rho(k,l)
+            ! I define f(t,y) = -i/h[H,y] +R:y = -i/h(H_ik*y_kj - y_ik*H_kj) + R_ijkl*y_kl
+            y = rho
+            !k1 = f(t, y)
+            do i=1, dim
+                do j=1, dim
+                    k1(i,j) = (0.d0, 0.d0)
+                    do k=1, dim
+                        k1(i,j) = k1(i,j)-imagine*(H(i,k)*y(k,j)- y(i,k)*H(k,j))/hbar_evfs
+                        do l=1, dim
+                            k1(i,j) = k1(i,j)+red(i,j,k,l)*y(k,l)
+                        end do
                     end do
                 end do
             end do
+            !rho_n+1 = rho_n + h*k1/6
+            rho_n = rho + timestep*k1/6
+
+            !y = rho+h*k1/2
+            y = rho + k1*timestep/2.d0
+            !k2 = f(t, y+k1*h/2)
+            do i=1, dim
+                do j=1, dim
+                    k1(i,j) = (0.d0, 0.d0)
+                    do k=1, dim
+                        k1(i,j) = k1(i,j)-imagine*(H(i,k)*y(k,j)- y(i,k)*H(k,j))/hbar_evfs
+                        do l=1, dim
+                            k1(i,j) = k1(i,j)+red(i,j,k,l)*y(k,l)
+                        end do
+                    end do
+                end do
+            end do
+            !rho_n+1 = rho_n + h*(k1+2k2)/6
+            rho_n= rho_n + 2*timestep*k1/6
+
+
+            !y = rho+h*k2/2
+            y = rho + k1*timestep/2.d0
+            !k3 = f(t, y+k2*h/2)
+            do i=1, dim
+                do j=1, dim
+                    k1(i,j) = (0.d0, 0.d0)
+                    do k=1, dim
+                        k1(i,j) = k1(i,j)-imagine*(H(i,k)*y(k,j)- y(i,k)*H(k,j))/hbar_evfs
+                        do l=1, dim
+                            k1(i,j) = k1(i,j)+red(i,j,k,l)*y(k,l)
+                        end do
+                    end do
+                end do
+            end do
+            !rho_n+1 = rho_n + h*(k1+2k2+2k3)/6
+            rho_n= rho_n + 2*timestep*k1/6
+
+
+            !y = rho+h*k3
+            y = rho + k1*timestep
+            !k4 = f(t, y+k3*h)
+            do i=1, dim
+                do j=1, dim
+                    k1(i,j) = (0.d0, 0.d0)
+                    do k=1, dim
+                        k1(i,j) = k1(i,j)-imagine*(H(i,k)*y(k,j)- y(i,k)*H(k,j))/hbar_evfs
+                        do l=1, dim
+                            k1(i,j) = k1(i,j)+red(i,j,k,l)*y(k,l)
+                        end do
+                    end do
+                end do
+            end do
+            !rho_n+1 = rho_n + h*(k1+2k2+2k3+k4)/6
+            rho_n= rho_n + timestep*k1/6
+            !I completed the evolution!
+            rho = rho_n
         end do
-    end function drho_dt_comm
+    end subroutine Runge_Kutta_Redfield
+
 
     subroutine Runge_Kutta_Operator(Op, H, dim,timestep, n_timesteps)
         integer a,b,c,jkr,i,j, dim, i_time, n_timesteps
@@ -1161,14 +1287,14 @@ contains
         do i=1, dim
             do j=1, dim
                 k1(i,j) = -k1(i,j)*imagine/hbar_evfs
-                rho_n(i,j)= rho(i,j) + timestep*k1(i,j)/2
+                rho_n(i,j)= rho(i,j) + timestep*k1(i,j)/2.d0
             end do
         end do
         call commutator_complex(k2, H, rho_n, dim)
         do i=1, dim
             do j=1, dim
                 k2(i,j) = -k2(i,j)*imagine/hbar_evfs
-                rho_n(i,j)= rho(i,j) + timestep*k2(i,j)/2
+                rho_n(i,j)= rho(i,j) + timestep*k2(i,j)/2.d0
             end do
         end do
         call commutator_complex(k3, H, rho_n, dim)
@@ -1191,9 +1317,6 @@ contains
         end do
     end subroutine Runge_Kutta_density
 
-        !>This is the very first runge kutta subroutine. This is the only one that I trust
-    !> However, this ruoitine INCORRECTLY do the unitary evolution only. I keep the name
-    !> just becouse I do not want to mess up all codes
     !> @note time steps in femtosceond, hamiltonian in eV
     subroutine Runge_Kutta_Liouville(rho,Liouv,dim,timestep)
         !> dimension of the operators
@@ -1265,82 +1388,10 @@ contains
     end subroutine Runge_Kutta_Liouville
 
 
-    !>This is the very first runge kutta subroutine. This is the only one that I trust
-    !> @note time steps in femtosceond, hamiltonian in eV
-    subroutine Runge_Kutta_redfield(rho,H,red,dim,timestep)
-        !> dimension of the operators
-        integer, intent(in) :: dim
-        !> doublecomplex (dim, dim) density matrix to be evolved
-        doublecomplex, intent(inout) :: rho(dim, dim)
-        !> doublecomplex (dim, dim) hamitlonian for the unitary evolution
-        doublecomplex, intent(in) ::  H(dim, dim)
-        !> doublecomplex (dim, dim, dim, dim) redfield tensor
-        doublecomplex, intent(in) ::  red(dim, dim, dim, dim)
-        !> doubleprecision timestpes in femtosecond!
-        doubleprecision, intent(in) :: timestep
-        doubleprecision hbar_evfs
-        complex*16  rho_n(dim, dim), k1(dim, dim), k2(dim, dim), k3(dim, dim), k4(dim, dim)
-        integer i,j,k,l
-        hbar_evfs = hbar_ev*1.d15
-        call commutator_complex(k1, H, rho, dim)
-        do i=1, dim
-            do j=1, dim
-                k1(i,j) = -k1(i,j)*imagine/hbar_evfs
-                do k=1, dim
-                    do l=1, dim
-                        k1(i,j) = k1(i,j) + red(i,j,k,l)*rho(k,l)
-                    end do
-                end do
-                k1(i,j) = -k1(i,j)*imagine/hbar_evfs
-                rho_n(i,j)= rho(i,j) + timestep*k1(i,j)/2
-            end do
-        end do
-        call commutator_complex(k2, H, rho_n, dim)
-        do i=1, dim
-            do j=1, dim
-                k2(i,j) = -k2(i,j)*imagine/hbar_evfs
-                do k=1, dim
-                    do l=1, dim
-                        k2(i,j) = k2(i,j) + red(i,j,k,l)*rho_n(k,l)
-                    end do
-                end do
-                rho_n(i,j)= rho(i,j) + timestep*k2(i,j)/2
-            end do
-        end do
-        call commutator_complex(k3, H, rho_n, dim)
-        do i=1, dim
-            do j=1, dim
-                k3(i,j) = -k3(i,j)*imagine/hbar_evfs
-                do k=1, dim
-                    do l=1, dim
-                        k3(i,j) = k3(i,j) + red(i,j,k,l)*rho_n(k,l)
-                    end do
-                end do
-                rho_n(i,j)= rho(i,j) + timestep*k3(i,j)
-            end do
-        end do
-        call commutator_complex(k4, H, rho_n, dim)
-        do i=1, dim
-            do j=1, dim
-                k4(i,j) = -k4(i,j)*imagine/hbar_evfs
-                do k=1, dim
-                    do l=1, dim
-                        k4(i,j) = k4(i,j) + red(i,j,k,l)*rho_n(k,l)
-                    end do
-                end do
-            end do
-        end do
-        do i=1, dim
-            do j=1, dim
-                rho(i,j) = rho(i,j) +(timestep/6.d0)*(k1(i,j)+2*k2(i,j)+2*k3(i,j)+k4(i,j))
-            end do
-        end do
-    end subroutine Runge_Kutta_redfield
 
-
-subroutine Save_Time_Correlation_unitary(operator, rho_0, val, dim,Deltat, t0, timefinal, n_dt, name)
-    integer dim, i, j, timesteps, n_dt
-        doubleprecision Deltat, tnow, timefinal, t0,val(dim)
+    subroutine Save_Time_Correlation_unitary(operator, rho_0, H, dim,Deltat, t0, timefinal, n_dt, name)
+        integer dim, i, j, timesteps, n_dt
+        doubleprecision Deltat, tnow, timefinal, t0,H(dim,dim)
         logical save
         doublecomplex operator(dim, dim), rho_0(dim, dim), operator_0(dim,dim), opp
         character(len=*) name
@@ -1351,7 +1402,7 @@ subroutine Save_Time_Correlation_unitary(operator, rho_0, val, dim,Deltat, t0, t
         do i=0, timesteps, n_dt
             opp = expval_Liouville_complex(operator_0, operator, dim)
             write(42,*) i*Deltat, real(opp), aimag(opp)
-            call Runge_Kutta_Unitary(operator, val, dim,Deltat, n_dt)
+            call Runge_Kutta_Unitary(operator, H*reality, dim,Deltat, n_dt)
         end do
         close(42)
     end subroutine Save_Time_Correlation_unitary

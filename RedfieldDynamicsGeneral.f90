@@ -10,8 +10,8 @@ program RedfieldDA
     !!!!!!!!!!!!!
     !Variables for the system
     !!!!!!!!!!!!!system
-    integer dimension
-    doublecomplex, allocatable :: H(:,:), adag(:,:), ahat(:,:), eigval(:), rho(:,:)
+    integer dimension, n_prop
+    doublecomplex, allocatable :: H(:,:), adag(:,:), ahat(:,:), eigval(:), rho(:,:), prop(:,:,:)
     doubleprecision, allocatable :: eigenvalues(:)
     character(len=100) inputsystem
     !!!!!!!!!!!!!
@@ -21,7 +21,7 @@ program RedfieldDA
     doubleprecision Deltat, T
     integer timesteps, n_dt
     character(len=100) DynType, DensityType,GammaType
-    doubleprecision omega_g
+    doubleprecision omega_g, eta_g
 
     !!!!!!!!!!!!!
     !Time evolution
@@ -44,7 +44,7 @@ program RedfieldDA
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     write(*,*) 'Input name:'
     read(*,'(A100)') inputsystem
-    call ReadInput(inputsystem, dimension, rho, H, adag, ahat, verbose='v')
+    call ReadInput(inputsystem, dimension, rho, H, adag, ahat,n_prop, prop)
     write(*,*)
 
     !!!!!!!!!!!!!!!!!!!!!!!!
@@ -52,7 +52,7 @@ program RedfieldDA
     !!!!!!!!!!!!!!!!!!!!!!!!
     write(*,*) 'Input name:'
     read(*,'(A100)') inputevol
-    call ReadTimeEvolutionInput(inputevol, deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g)
+    call ReadTimeEvolutionInput(inputevol, deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
     write(*,*)
 
     !!!!!!!!!!!!!!
@@ -64,40 +64,40 @@ program RedfieldDA
     end do
 
     allocate(gammas(dimension, dimension), density(dimension, dimension))
-    call FilLGamma(dimension, Gammas, H, GammaType, omega_g)
-    write(*,*) 'Gamma'
-    call write_matrix_double(real(gammas), dimension, dimension, 'e9.2')
+    call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+    write(*,*) 'Gamma filled!'
+!    call write_matrix_double(real(gammas), dimension, dimension, 'e9.2')
     call FilLDensity(dimension, density, H, DensityType, T)
-    call write_matrix_double(density, dimension, dimension, 'e9.2')
+    write(*,*) 'Density filled!'
+!    call write_matrix_double(density, dimension, dimension, 'e9.2')
 
     !!!!!!
     ! write the redfield tensor if it is necessary
     !!!!!!
     allocate(LiouvilleTensor(dimension, dimension, dimension,dimension))
     LiouvilleTensor = (0.d0, 0.d0)
-    if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
-        write(*,*) 'Unitary dynamics! No redfield tensor written'
-    else
-        write(*,*) 'Writing redfield tensor'
-        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
-        call CheckDetailBalanceRedfield_Double(real(LiouvilleTensor), eigenvalues, T,dimension)
-        LiouvilleTensor = Liouvillian_Complex(H/(1.d15), LiouvilleTensor, dimension)
-        write(*,*) 'Liouville tensor written'
-    end if
     write(*,*) "Before the evolution"
     call write_matrix_complex(rho, dimension, dimension, 'e9.2')
     write(*,*) 'Initial population'
     write(*,'(<dimension>(F6.3, X))') (real(rho(i,i)), i=1, dimension)
     write(*,*) 'Select the dynamics!'
     if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
-        call EvolveWithRungeKuttaUnitary(rho, H, dimension, Deltat, timesteps, '*')
-    elseif((DynType=='runge-kutta').or.(DynType=='RK'))then
-        call EvolveWithRungeKutta(rho, LiouvilleTensor, dimension, Deltat, timesteps, '*')
-    elseif ((DynType=='arnoldi').or.(DynType=='arnoldi'))then
-        write(*,*) 'No krylov dimension is inserted! 10 is taken as a guess'
-        call EvolveWithArnoldi(rho, LiouvilleTensor, dimension, 10, Deltat, timesteps,'*')
+        call EvolveWithRungeKuttaUnitary(rho, H, dimension, Deltat, timesteps,n_prop, prop, '*')
+    elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then
+        write(*,*) 'Writing redfield tensor'
+        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        call EvolveWithRungeKuttaRedfield(rho, H, LiouvilleTensor, dimension, Deltat, timesteps, n_prop, prop, '*')
+    elseif ((DynType=='arnoldi').or.(DynType=='A'))then
+        write(*,*) 'No krylov dimension is inserted! 20 is taken as a guess'
+        write(*,*) 'Writing redfield tensor'
+        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+        call EvolveWithArnoldi(rho, LiouvilleTensor, dimension, 20, Deltat, timesteps, n_prop, prop, '*')
     elseif ((DynType=='D').or.(DynType=='diag'))then
-        call EvolveWithLiouvilleDiagonalization(rho, LiouvilleTensor, dimension, Deltat, timesteps, '*')
+        write(*,*) 'Writing redfield tensor'
+        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+        call EvolveWithLiouvilleDiagonalization(rho, LiouvilleTensor, dimension, Deltat, timesteps, n_prop, prop,'*')
     end if
     write(*,*) "After the evolution"
     call write_matrix_complex(rho, dimension, dimension, 'e9.2')
@@ -108,7 +108,7 @@ program RedfieldDA
     close(1)
     write(*,*) 'End program!'
 contains
-    subroutine ReadInput(name, dim, rho, H, a1, a2, verbose)
+    subroutine ReadInput(name, dim, rho, H, a1, a2,n_prop, prop, verbose)
         implicit none
         !> character name of the input file
         character(len=*), intent(in) :: name
@@ -122,11 +122,16 @@ contains
         doublecomplex, allocatable, intent(inout) :: a1(:,:)
         !> second doublecomplex(dim, dim) operators coupled with the Bath
         doublecomplex, allocatable, intent(inout) :: a2(:,:)
+        !> integer number of properties to be calculated
+        integer, intent(inout) :: n_prop
+        !> doublecomplex(dim, dim) with properties to be calculated
+        doublecomplex, allocatable, intent(inout) :: prop(:,:,:)
         !> character optional, if "verb", "verbose" or "v" I will print everything
         character(len=*), optional :: verbose
 
-        character(len=50) rhoname, Hname, a1name, a2name
+        character(len=50) rhoname, Hname, a1name, a2name, nameprop
         logical verb
+        integer i
 
         verb=.false.
         if(present(verbose))then
@@ -141,6 +146,23 @@ contains
         read(1,*) Hname
         read(1,*) a1name
         read(1,*) a2name
+        read(1,*) n_prop
+        if(n_prop.gt.0)then
+            allocate(prop(n_prop, dim, dim))
+            do i=1, n_prop
+                nameprop = ''
+                read(1,*) nameprop
+                write(*,'(A, I2, A, A)') 'Read prop ', i, ' from ', nameprop
+                open(2, file=nameprop, form='unformatted')
+                read(2) prop(i,:,:)
+                write(*,*) 'Trace: ', trace_complex(prop(i,:,:), dim)
+                call write_matrix_complex(prop(i,:,:), dim, dim, "e9.2")
+                close(2)
+            end do
+        else
+            allocate(prop(0, dim, dim))
+        end if
+
         close(1)
         allocate(rho(dim,dim), H(dim,dim), a1(dim, dim), a2(dim, dim))
 

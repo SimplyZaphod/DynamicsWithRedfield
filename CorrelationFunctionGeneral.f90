@@ -22,7 +22,8 @@ program RedfieldCorr
     doubleprecision Deltat, T
     integer timesteps, n_dt
     character(len=100) DynType, DensityType,GammaType
-    doubleprecision omega_g
+    integer selGF
+    doubleprecision omega_g, eta_g
 
     !!!!!!!!!!!!!
     !Time evolution
@@ -45,38 +46,68 @@ program RedfieldCorr
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     write(*,*) 'Input name:'
     read(*,'(A100)') inputsystem
-    call ReadInput(inputsystem, dimension, rho, H, adag, ahat, op1, op2, nameout,verbose='v')
+    call ReadInput(inputsystem, dimension, rho, H, adag, ahat, op1, op2, selGF,nameout,verbose='v')
     write(*,*)
+    allocate(eigenvalues(dimension))
+    do i=1, dimension
+        eigenvalues(i) = real(H(i,i))
+    end do
 
     !!!!!!!!!!!!!!!!!!!!!!!!
     ! Let's read the input for evolution
     !!!!!!!!!!!!!!!!!!!!!!!!
     write(*,*) 'Input name:'
     read(*,'(A100)') inputevol
-    call ReadTimeEvolutionInput(inputevol, deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g)
+    call ReadTimeEvolutionInput(inputevol, deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
     write(*,*)
     write(*,*) 'ACHTUNG! For now the unitary evolution only is allowed! Take care'
-    write(*,*) 'Write the generating function'
-    call commutator_complex(rho, op2, rho, dimension)
-    rho = -imagine*rho
-!    call npmatmul_complex(rho, op2, rho, dimension, dimension, dimension)
+    write(*,*) 'Write the generating function!'
+    write(*,*) 'Selected GF:', selGF
+    if(selGF.eq.1)then
+        write(*,*) 'GF = -i[op2, rho]'
+        call CorrelationFunction1(rho, op2, rho, dimension)
+    elseif(selGF.eq.2)then
+        write(*,*) 'GF = i*op2*rho'
+        call CorrelationFunction2(rho, op2, rho, dimension)
+    elseif(selGF.eq.3)then
+        write(*,*) 'GF = i*rho*op2'
+        call CorrelationFunction3(rho, op2, rho, dimension)
+    end if
 
     write(*,*) 'Select the dynamics!'
-    call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
-
-    !if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
-!        call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
-!    elseif ((DynType=='arnoldi').or.(DynType=='arnoldi'))then
-!        write(*,*) 'No krylov dimension is inserted! 10 is taken as a guess'
-!        call EvolveWithArnoldi(rho, LiouvilleTensor, dimension, 10, Deltat, timesteps,'*')
-!    elseif ((DynType=='D').or.(DynType=='diag'))then
-!        call EvolveWithLiouvilleDiagonalization(rho, LiouvilleTensor, dimension, Deltat, timesteps, '*')
-!    end if
+    if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
+        call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
+    elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then
+        write(*,*) 'Writing redfield tensor'
+        allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+        call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+        call FilLDensity(dimension, density, H, DensityType, T)
+        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        call CorrelationWithRungeKuttaRedfield(op1,rho, H,LiouvilleTensor, dimension, Deltat, timesteps, nameout)
+    elseif ((DynType=='arnoldi').or.(DynType=='A'))then
+        write(*,*) 'No krylov dimension is inserted! 20 is taken as a guess'
+        write(*,*) 'Writing redfield tensor'
+        allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+        call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+        call FilLDensity(dimension, density, H, DensityType, T)
+        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+        call CorrelationWithArnoldi(op1,rho, LiouvilleTensor, dimension,20, Deltat, timesteps, nameout)
+    elseif ((DynType=='D').or.(DynType=='diag'))then
+        write(*,*) 'Writing redfield tensor'
+        write(*,*) 'This DOES NOT WORK!'
+        allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+        call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+        call FilLDensity(dimension, density, H, DensityType, T)
+        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+        call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
+    end if
     write(*,*) "After the evolution"
     call write_matrix_complex(rho, dimension, dimension, 'e9.2')
     write(*,*) 'End program!'
 contains
-    subroutine ReadInput(name, dim, rho, H, a1, a2,op1,op2,nameout, verbose)
+    subroutine ReadInput(name, dim, rho, H, a1, a2,op1,op2,GF, nameout, verbose)
         implicit none
         !> character name of the input file
         character(len=*), intent(in) :: name
@@ -86,7 +117,7 @@ contains
         doublecomplex, allocatable, intent(inout) :: rho(:,:)
         !> doublecomplex (dim, dim) Hamiltonian
         doublecomplex, allocatable, intent(inout) :: H(:,:)
-        !> first doublecomplex(dim, dim) operators coupled with the Bath
+        !> first doublecomplex(dim, dim) operators coupled w    ith the Bath
         doublecomplex, allocatable, intent(inout) :: a1(:,:)
         !> second doublecomplex(dim, dim) operators coupled with the Bath
         doublecomplex, allocatable, intent(inout) :: a2(:,:)
@@ -96,6 +127,8 @@ contains
         !> first doublecomplex(dim, dim) operators that does evolve with time as a
         !> generating function
         doublecomplex, allocatable, intent(inout) :: op2(:,:)
+        !>integer type of GF to be used
+        integer, intent(inout) :: GF
         !> name of the output necessary
         character(len=100) nameout
         !> character optional, if "verb", "verbose" or "v" I will print everything
@@ -119,6 +152,7 @@ contains
         read(1,*) a2name
         read(1,*) op1name
         read(1,*) op2name
+        read(1, *) GF
         read(1,*) nameout
         close(1)
         allocate(rho(dim,dim), H(dim,dim), a1(dim, dim), a2(dim, dim),&
@@ -165,5 +199,56 @@ contains
             write(*,*) 'second operator read from: ', op2name
         end if
     end subroutine ReadInput
+    !This function return the starting correlation function as Omega=-i[op, rho]
+    subroutine CorrelationFunction1(GF, op, rho, dim)
+        !dimension of the system
+        integer, intent(in) :: dim
+        !output correlation function
+        doublecomplex, intent(inout) :: GF(dim, dim)
+        !doublecomplex (dim,dim) operator
+        doublecomplex, intent(in) :: op(dim, dim)
+        !doublecomplex density matrix
+        doublecomplex, intent(in) :: rho(dim,dim)
 
+        doublecomplex, dimension(:,:), allocatable :: aux
+
+        allocate(aux(dim, dim))
+        call commutator_complex(aux, op, rho, dim)
+        aux = -imagine*aux
+        GF = aux
+    end subroutine CorrelationFunction1
+    !This function return the starting correlation function as Omega= op*rho
+    subroutine CorrelationFunction2(GF, op, rho, dim)
+        !dimension of the system
+        integer, intent(in) :: dim
+        !output correlation function
+        doublecomplex, intent(inout) :: GF(dim, dim)
+        !doublecomplex (dim,dim) operator
+        doublecomplex, intent(in) :: op(dim, dim)
+        !doublecomplex density matrix
+        doublecomplex, intent(in) :: rho(dim,dim)
+
+        doublecomplex, dimension(:,:), allocatable :: aux
+
+        allocate(aux(dim, dim))
+        call npmatmul_complex(aux, op, rho, dim,dim,dim)
+        GF = imagine*aux
+    end subroutine CorrelationFunction2
+    !This function return the starting correlation function as Omega= rho*op
+    subroutine CorrelationFunction3(GF, op, rho, dim)
+        !dimension of the system
+        integer, intent(in) :: dim
+        !output correlation function
+        doublecomplex, intent(inout) :: GF(dim, dim)
+        !doublecomplex (dim,dim) operator
+        doublecomplex, intent(in) :: op(dim, dim)
+        !doublecomplex density matrix
+        doublecomplex, intent(in) :: rho(dim,dim)
+
+        doublecomplex, dimension(:,:), allocatable :: aux
+
+        allocate(aux(dim, dim))
+        call npmatmul_complex(aux, rho, op, dim,dim,dim)
+        GF = -imagine*aux
+    end subroutine CorrelationFunction3
 end program RedfieldCorr

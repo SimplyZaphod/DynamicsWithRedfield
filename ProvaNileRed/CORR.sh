@@ -15,9 +15,9 @@ then
 else
     INPUT2=$2
 fi
+OUTT=${INPUT%'.inp'}.out
 
-
-./CorrelationFunctionGeneral.e <<EOF > prova.out &
+./CorrelationFunctionGeneral.e <<EOF > $OUTT &
 $INPUT
 $INPUT2
 EOF
