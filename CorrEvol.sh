@@ -46,3 +46,4 @@ else
     cd ..
 fi
 
+rm *.tmp

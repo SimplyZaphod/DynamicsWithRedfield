@@ -18,7 +18,7 @@ program RedfieldDA
     ! Variable for time evolution
     !!!!!!!!!!!!!
     character(len=100) inputevol
-    doubleprecision Deltat, T
+    doubleprecision Deltat,t_0,t_f, T
     integer timesteps, n_dt
     character(len=100) DynType, DensityType,GammaType
     doubleprecision omega_g, eta_g
@@ -52,9 +52,9 @@ program RedfieldDA
     !!!!!!!!!!!!!!!!!!!!!!!!
     write(*,*) 'Input name:'
     read(*,'(A100)') inputevol
-    call ReadTimeEvolutionInput(inputevol, deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
+    call ReadTimeEvolutionInput(inputevol, t_0,t_f, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
     write(*,*)
-
+    deltat = abs(t_f-t_0)/timesteps
     !!!!!!!!!!!!!!
     ! Fill gamma and density
     !!!!!!!!!!!!!!

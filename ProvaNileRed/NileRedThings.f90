@@ -21,10 +21,11 @@ program DA
     tau = 0.95
     z = 0.88
     omega = 0.14
-    g = 0.30
+    g = 0.80
 
     N_el = 2
-    dim_v = 16
+    write(*,*) 'Number of modes'
+    read(*,*) dim_v
     dim_s = n_el * dim_v
     allocate(H(dim_s, dim_s), H_el(N_el, N_el), H_v(dim_v, dim_v),&
     Q(dim_v, dim_v), rho(n_el, n_el))
@@ -113,7 +114,13 @@ program DA
     waste(1,1) = reality
     open(1, file='rho_G.dat', form='unformatted')
     write(1) waste(1:,1:)
+    close(1)
+    waste = (0.d0, 0.d0)
+    waste(dim_s,dim_s) = reality
+    open(1, file='rho_E.dat', form='unformatted')
+    write(1) waste(1:,1:)
     close(1)  
+    
     waste = mu
     do i=1, dim_s
        do j=1, i

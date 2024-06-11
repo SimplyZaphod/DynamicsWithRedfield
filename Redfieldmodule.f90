@@ -39,11 +39,11 @@ contains
         close(1)
     end subroutine load_time_evolution_input
 
-    subroutine ReadTimeEvolutionInput(nameinput,deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
+    subroutine ReadTimeEvolutionInput(nameinput,t_0,t_f, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
         !> From where I need to read the information
         character(len=*), intent(in) :: nameinput
-        !> doubleprecision Timestep
-        doubleprecision, intent(out) :: deltat
+        !> doubleprecision initial time and final time
+        doubleprecision, intent(out) :: t_0,t_f
         !> integer number of timesteps
         integer, intent(out) :: timesteps
         !> Integer number of timesteps before printing
@@ -63,7 +63,7 @@ contains
 
 
         open(1, file=nameinput)
-        read(1, *) deltat
+        read(1, *) t_0,t_f
         read(1,*) timesteps
         read(1,*) n_dt
         read(1,*) DynType
@@ -77,7 +77,8 @@ contains
         end if
 
         write(*,'(A, A30)') 'Time evolution parameters read from: ', nameinput
-        write(*,'(A,F,A)') 'from t=0 to t=', deltat*(timesteps-1),' fs'
+        write(*,'(A,F14.8,A,F14.8,A)') 'from t=',t_0,'fs to t=', t_f,' fs'
+        write(*,'(A,I8,A,F8.5,A)') 'Number of timesteps: ', timesteps,' with Deltat=', abs(t_f-t_0)/(1.d0*timesteps), ' fs'
         write(*,*) 'I will save every ', n_dt,' snapshots'
         write(*,*) 'Integration method:', DynType
         write(*,'(A, F7.2,A)') 'Temperature: ', T, ' K'
@@ -91,7 +92,6 @@ contains
         write(*,*) '========================================='
         close(1)
     end subroutine ReadTimeEvolutionInput
-
 
     !> Calculation of the weight for the Simpson integration
     !> @todo I need to put this routine in the MathFunc.o module

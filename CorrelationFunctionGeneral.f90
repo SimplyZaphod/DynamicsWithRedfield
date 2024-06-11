@@ -15,11 +15,12 @@ program RedfieldCorr
             op1(:,:), op2(:,:)
     doubleprecision, allocatable :: eigenvalues(:)
     character(len=100) inputsystem, nameout
+    character(len=150) spettro !!! just in case some trash is needed
     !!!!!!!!!!!!!
     ! Variable for time evolution
     !!!!!!!!!!!!!
     character(len=100) inputevol
-    doubleprecision Deltat, T
+    doubleprecision Deltat,t_0,t_f,T
     integer timesteps, n_dt
     character(len=100) DynType, DensityType,GammaType
     integer selGF
@@ -31,6 +32,11 @@ program RedfieldCorr
     doublecomplex, allocatable :: LiouvilleTensor(:,:,:,:), gammas(:,:)
     doubleprecision, allocatable :: density(:,:)
     integer nkrylov
+    !!!!!!!!!!!!!!!
+    !Time reversal
+    !!!!!!!!!!!!!!!
+    logical symm
+    doubleprecision, allocatable, dimension(:,:) :: vector1, vector2
     !!!!!!!!!!!!!!!!
     ! Save the final matrix
     !!!!!!!!!!!!!!!!
@@ -58,7 +64,7 @@ program RedfieldCorr
     !!!!!!!!!!!!!!!!!!!!!!!!
     write(*,*) 'Input name:'
     read(*,'(A100)') inputevol
-    call ReadTimeEvolutionInput(inputevol, deltat, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
+    call ReadTimeEvolutionInput(inputevol, t_0,t_f, timesteps, n_dt, DynType, T, densitytype, gammatype, omega_g, eta_g)
     write(*,*)
     write(*,*) 'ACHTUNG! For now the unitary evolution only is allowed! Take care'
     write(*,*) 'Write the generating function!'
@@ -66,46 +72,165 @@ program RedfieldCorr
     if(selGF.eq.1)then
         write(*,*) 'GF = -i[op2, rho]'
         call CorrelationFunction1(rho, op2, rho, dimension)
+        op2 = rho
     elseif(selGF.eq.2)then
         write(*,*) 'GF = i*op2*rho'
         call CorrelationFunction2(rho, op2, rho, dimension)
+        op2 = rho
     elseif(selGF.eq.3)then
         write(*,*) 'GF = i*rho*op2'
         call CorrelationFunction3(rho, op2, rho, dimension)
+        op2 = rho
+    end if
+    !!!!!!!!!!!!!!!!!!!!!
+    !In this subroutine I need to select the time such that:
+    !-if t_0*t_f>0, then everything is shifted such that t_0 = 0
+    !-if t_0*t_f<0, then everything is adjusted such that the 0 is in the middle of the interval
+    !!!!!!!!!!!!!!!!!!!!!
+    if((t_0*t_f).ge.0.d0)then
+        t_f = t_f-t_0
+        t_0 = 0.d0
+        symm = .false.
+    else
+        if(mod(timesteps,2))then
+            timesteps = timesteps/2 +1
+            write(*,*) "Timestep is changed! A point is added"
+        else
+            timesteps = timesteps + 1
+            timesteps = timesteps/2
+        end if
+        t_f = (t_f-t_0)/2.d0
+        t_0 = 0.d0
+        symm = .true.
     end if
 
-    write(*,*) 'Select the dynamics!'
-    if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
-        call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
-    elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then
-        write(*,*) 'Writing redfield tensor'
-        allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
-        call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
-        call FilLDensity(dimension, density, H, DensityType, T)
-        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
-        call CorrelationWithRungeKuttaRedfield(op1,rho, H,LiouvilleTensor, dimension, Deltat, timesteps, nameout)
-    elseif ((DynType=='arnoldi').or.(DynType=='A'))then
-        write(*,*) 'No krylov dimension is inserted! 20 is taken as a guess'
-        write(*,*) 'Writing redfield tensor'
-        allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
-        call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
-        call FilLDensity(dimension, density, H, DensityType, T)
-        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
-        LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
-        call CorrelationWithArnoldi(op1,rho, LiouvilleTensor, dimension,20, Deltat, timesteps, nameout)
-    elseif ((DynType=='D').or.(DynType=='diag'))then
-        write(*,*) 'Writing redfield tensor'
-        write(*,*) 'This DOES NOT WORK!'
-        allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
-        call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
-        call FilLDensity(dimension, density, H, DensityType, T)
-        LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
-        LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
-        call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
+    if(.not.symm)then
+        write(*,*) 'Select the dynamics!'
+        if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
+            call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
+        elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then
+            write(*,*) 'Writing redfield tensor'
+            allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+            call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+            call FilLDensity(dimension, density, H, DensityType, T)
+            LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+            call CorrelationWithRungeKuttaRedfield(op1,rho, H,LiouvilleTensor, dimension, Deltat, timesteps, nameout)
+            deallocate(gammas, density, LiouvilleTensor)
+        elseif ((DynType=='arnoldi').or.(DynType=='A'))then
+            write(*,*) 'No krylov dimension is inserted! 20 is taken as a guess'
+            write(*,*) 'Writing redfield tensor'
+            allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+            call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+            call FilLDensity(dimension, density, H, DensityType, T)
+            LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+            LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+            call CorrelationWithArnoldi(op1,rho, LiouvilleTensor, dimension,20, Deltat, timesteps, nameout)
+            deallocate(gammas, density, LiouvilleTensor)
+        elseif ((DynType=='D').or.(DynType=='diag'))then
+            write(*,*) 'Writing redfield tensor'
+            write(*,*) 'This DOES NOT WORK!'
+            allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+            call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+            call FilLDensity(dimension, density, H, DensityType, T)
+            LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+            LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+            call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
+            deallocate(gammas, density, LiouvilleTensor)
+        end if
+        write(*,*) "After the evolution"
+        call write_matrix_complex(rho, dimension, dimension, 'e9.2')
+        write(*,*) 'End program!'
+    else
+        write(*,*) 'The evolution is taken out in two steps'
+        write(*,*) 'First step: from t_0=0 to t_f=t_f/2'
+        spettro = ''
+        write(spettro, *) nameout,'.1.tmp'
+        call StripSpaces(spettro)
+        Deltat = t_f/timesteps
+        if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
+            call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, spettro)
+        elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then
+            write(*,*) 'Writing redfield tensor'
+            allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+            call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+            call FilLDensity(dimension, density, H, DensityType, T)
+            LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+            call CorrelationWithRungeKuttaRedfield(op1,rho, H,LiouvilleTensor, dimension, Deltat, timesteps, spettro)
+        elseif ((DynType=='arnoldi').or.(DynType=='A'))then
+            write(*,*) 'No krylov dimension is inserted! 20 is taken as a guess'
+            write(*,*) 'Writing redfield tensor'
+            allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+            call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+            call FilLDensity(dimension, density, H, DensityType, T)
+            LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+            LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+            call CorrelationWithArnoldi(op1,rho, LiouvilleTensor, dimension,20, Deltat, timesteps, spettro)
+        elseif ((DynType=='D').or.(DynType=='diag'))then
+            write(*,*) 'Writing redfield tensor'
+            write(*,*) 'This DOES NOT WORK!'
+            allocate(gammas(dimension, dimension), density(dimension, dimension), LiouvilleTensor(dimension, dimension, dimension, dimension))
+            call FilLGamma(dimension, Gammas, H, GammaType, omega_g, eta_g)
+            call FilLDensity(dimension, density, H, DensityType, T)
+            LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+            LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
+            call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, spettro)
+        end if
+        !!!!!!!!!!!!!!!!!!!!!!!!!!
+        !!!!!!!!!!!!!!!!!!!!!!!!!!
+        write(*,*) '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        write(*,*) 'END OF FIRST STEP'
+        write(*,*) '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        write(*,*) 'Second step: from t_0=0 to t_f=-t_f/2'
+        rho = op2
+        spettro = ''
+        write(spettro, *) nameout,'.2.tmp'
+        call StripSpaces(spettro)
+        Deltat = -Deltat
+        if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
+            call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, spettro)
+        elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then
+            call CorrelationWithRungeKuttaRedfield(op1,rho, H,LiouvilleTensor, dimension, Deltat, timesteps, spettro)
+            deallocate(gammas, density, LiouvilleTensor)
+        elseif ((DynType=='arnoldi').or.(DynType=='A'))then
+            call CorrelationWithArnoldi(op1,rho, LiouvilleTensor, dimension,20, Deltat, timesteps, spettro)
+            deallocate(gammas, density, LiouvilleTensor)
+        elseif ((DynType=='D').or.(DynType=='diag'))then
+            call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, spettro)
+            deallocate(gammas, density, LiouvilleTensor)
+        end if
+        write(*,*) '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        write(*,*) 'END OF FIRST STEP'
+        write(*,*) '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        write(*,*) 'Now it is necessary to reorder the spectrum'
+        allocate(vector2(timesteps*2-1,3))
+        spettro = ''
+        write(spettro, *) nameout,'.1.tmp'
+        call StripSpaces(spettro)
+        open(2, file=spettro)
+        do i=1, timesteps
+            read(2, *) vector2(i+timesteps-1,1), vector2(i+timesteps-1,2), vector2(i+timesteps-1,3)
+        end do
+        close(2)
+
+        spettro = ''
+        write(spettro, *) nameout,'.2.tmp'
+        call StripSpaces(spettro)
+        open(2, file=spettro)
+        open(2, file=spettro)
+        read(2,*)
+        do i=1, timesteps-1
+            read(2, *) vector2(timesteps-i,1), vector2(timesteps-i,2), vector2(timesteps-i,3)
+        end do
+        close(2)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!
+        !Now reorder
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!
+        open(1, file=nameout)
+        do i=1, 2*timesteps-1
+            write(1,'(F, x, 2(e18.6E5, x))') vector2(i,1), vector2(i,2), vector2(i,3)
+        end do
+        close(1)
     end if
-    write(*,*) "After the evolution"
-    call write_matrix_complex(rho, dimension, dimension, 'e9.2')
-    write(*,*) 'End program!'
 contains
     subroutine ReadInput(name, dim, rho, H, a1, a2,op1,op2,GF, nameout, verbose)
         implicit none

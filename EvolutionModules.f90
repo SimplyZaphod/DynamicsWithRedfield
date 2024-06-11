@@ -5,6 +5,8 @@ module Evolutions
     use UsefullIO
     contains
 
+
+
     !This routine fill a Gamma matrix given as input with the desired spectral density
     !> @todo check if I imposed the optional constant in a correct way
     subroutine FilLGamma(dim, Gammas, H, GammaType, const, eta)
@@ -103,6 +105,7 @@ module Evolutions
         end do
         write(*,*) 'Start evolution with Runge Kutta'
         if(present(name))then
+            write(*,*) 'Save at: ', name
             if(name.ne."*")then
                 open(1, file=name, form='unformatted')
                 do i=0, timesteps-1
@@ -123,8 +126,8 @@ module Evolutions
                             call npmatmul_complex(propts, propts, rho, dim, dim, dim)
                             property = trace_complex(propts, dim)
                             write(*,'(A, I2)') 'Property number ', j
-                            write(*,'(A, e14.6, 2X, e14.6)') "Value ", real(property), aimag(property)
-                            write(j,'(F12.4, x, e14.6, x, e14.6)') Deltat*i, real(property), aimag(property)
+                            write(*,'(A, e18.6E5, 2X, e18.6E5)') "Value ", real(property), aimag(property)
+                            write(j,'(F12.4, x, e18.6E5, x, e18.6E5)') Deltat*i, real(property), aimag(property)
                         end do
                         deallocate(propts)
                     end if
@@ -160,6 +163,7 @@ module Evolutions
         character(len=*), optional :: name
         write(*,*) 'Start evolution with Runge Kutta'
         if(present(name))then
+            write(*,*) 'Save at: ', name
             if(name.ne."*")then
                 open(1, file=name, form='unformatted')
                 do i=0, timesteps-1
@@ -220,6 +224,7 @@ module Evolutions
         end do
         write(*,*) 'Start evolution with Runge Kutta'
         if(present(name))then
+            write(*,*) 'Save at: ', name
             if(name.ne."*")then
                 open(1, file=name, form='unformatted')
                 do i=0, timesteps-1
@@ -241,8 +246,8 @@ module Evolutions
                             call npmatmul_complex(propts, propts, rho, dim, dim, dim)
                             property = trace_complex(propts, dim)
                             write(*,'(A, I2)') 'Property number ', j
-                            write(*,'(A, e14.6, 2X, e14.6)') "Value ", real(property), aimag(property)
-                            write(j,'(F12.4, x, e14.6, x, e14.6)') Deltat*i, real(property), aimag(property)
+                            write(*,'(A, e18.6E5, 2X, e18.6E5)') "Value ", real(property), aimag(property)
+                            write(j,'(F12.4, x, e18.6E5, x, e18.6E5)') Deltat*i, real(property), aimag(property)
                         end do
                         deallocate(propts)
                     end if
@@ -319,6 +324,7 @@ module Evolutions
 
         write(*,*) 'Start evolution by Diagonalizing the Liouvillian'
         if(present(name))then
+            write(*,*) 'Save at: ', name
             if(name.ne."*")then
                 open(1, file=name, form='unformatted')
                 do i=0, timesteps-1
@@ -357,8 +363,8 @@ module Evolutions
                             call npmatmul_complex(propts, propts, rho, dim, dim, dim)
                             property = trace_complex(propts, dim)
                             write(*,'(A, I2)') 'Property number ', j
-                            write(*,'(A, e14.6, 2X, e14.6)') "Value ", real(property), aimag(property)
-                            write(j,'(F12.4, x, e14.6, x, e14.6)') Deltat*i, real(property), aimag(property)
+                            write(*,'(A, e18.6E5, 2X, e18.6E5)') "Value ", real(property), aimag(property)
+                            write(j,'(F12.4, x, e18.6E5, x, e18.6E5)') Deltat*i, real(property), aimag(property)
                         end do
                         deallocate(propts)
                     end if
@@ -417,6 +423,7 @@ module Evolutions
 
         write(*,*) 'Start evolution with Arnoldi'
         if(present(name))then
+            write(*,*) 'Save at: ', name
             if(name.ne."*")then
                 write(*,*) 'I write to ', name
                 open(1, file=name, form='unformatted')
@@ -454,8 +461,8 @@ module Evolutions
                                 end do
                             end do
                             write(*,'(A, I2)') 'Property number ', j
-                            write(*,'(A, e14.6, 2X, e14.6)') "Value ", real(property), aimag(property)
-                            write(j,'(F12.4, x, e14.6, x, e14.6)') Deltat*i, real(property), aimag(property)
+                            write(*,'(A, e18.6E5, 2X, e18.6E5)') "Value ", real(property), aimag(property)
+                            write(j,'(F12.4, x, e18.6E5, x, e18.6E5)') Deltat*i, real(property), aimag(property)
                         end do
                     end if
                     call arnoldi(rhovec, Liouvillian, dimsq,nkrylov, Deltat)
@@ -502,27 +509,28 @@ module Evolutions
 
         lliouv = ReturnSuperOperatorsInLiouvillian(Liouv, dim)
         lrho = ReturnOperatorsInLiouvillian(rho, dim)
-        write(*,*) 'Start evolution with Runge Kutta'
+        write(*,*) 'Start evolution with Arnoldi'
         if(present(name))then
+            write(*,*) 'Save at: ', name
             if(name.ne."*")then
                 open(1, file=name)
                 do i=0, timesteps-1, 1
                     rho = ReturnOperatorsInRealSpace(lrho, dim)
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)
-                    write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                    write(1, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                     call arnoldi(lrho, lliouv, dimsq, nkrylov, Deltat)
                 end do
                 call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                 correlation = trace_complex(correlation_mat, dim)
-                write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                write(1, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                 close(1)
             else
                 do i=0, timesteps-1, 1
                     write(*,"(A, F12.4 ,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(trace_complex(rho, dim))
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)
-                    write(*, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                    write(*, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                     call arnoldi(lrho, lliouv, dimsq, nkrylov, Deltat)
                 end do
                 write(*,"(A, F12.4)") 'Time: ', Deltat*(i+1)
@@ -566,19 +574,19 @@ module Evolutions
                 do i=0, timesteps-1, 1
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)
-                    write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                    write(1, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                     call Runge_Kutta_Unitary(rho, H, dim, Deltat, 1)
                 end do
                 call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                 correlation = trace_complex(correlation_mat, dim)
-                write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                write(1, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                 close(1)
             else
                 do i=0, timesteps-1, 1
                     write(*,"(A, F12.4 ,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(trace_complex(rho, dim))
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)
-                    write(*, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                    write(*, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                     call Runge_Kutta_Unitary(rho, H, dim, Deltat, 1)
                 end do
                 write(*,"(A, F12.4)") 'Time: ', Deltat*(i+1)
@@ -624,19 +632,19 @@ module Evolutions
                 do i=0, timesteps-1, 1
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)
-                    write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                    write(1, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                     call Runge_Kutta_Redfield(rho, H, red, dim, Deltat, 1)
                 end do
                 call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                 correlation = trace_complex(correlation_mat, dim)
-                write(1, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                write(1, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                 close(1)
             else
                 do i=0, timesteps-1, 1
                     write(*,"(A, F12.4 ,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(trace_complex(rho, dim))
                     call npmatmul_complex(correlation_mat, op1, rho, dim, dim, dim)
                     correlation = trace_complex(correlation_mat, dim)
-                    write(*, '(F, x, 2(e15.3E5, x))') deltat*i,real(correlation), aimag(correlation)
+                    write(*, '(F, x, 2(e18.6E5, x))') deltat*i,real(correlation), aimag(correlation)
                     call Runge_Kutta_Redfield(rho, H, red, dim, Deltat, 1)
                 end do
                 write(*,"(A, F12.4)") 'Time: ', Deltat*(i+1)
