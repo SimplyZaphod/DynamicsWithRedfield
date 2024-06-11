@@ -43,6 +43,9 @@ module Evolutions
         elseif((GammaType=='null').or.(GammaType=='zero'))then
             write(*,*) 'Null spectral density'
             call GammaConstant(gammatoken, 0.d0, values, dim)
+        else
+            write(*,*) 'Unrecognized keyword! Null is guessed'
+            call GammaConstant(gammatoken, 0.d0, values, dim)
         endif
         Gammas = gammatoken*reality
     end subroutine FilLGamma

@@ -202,6 +202,7 @@ program RedfieldCorr
         write(*,*) 'END OF FIRST STEP'
         write(*,*) '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
         write(*,*) 'Now it is necessary to reorder the spectrum'
+        if(GammaType.eq.'exp') write(*,*) 'Additionally I will damp with an exponential with damping 0.05 fs'
         allocate(vector2(timesteps*2-1,3))
         spettro = ''
         write(spettro, *) nameout,'.1.tmp'
@@ -225,11 +226,19 @@ program RedfieldCorr
         !!!!!!!!!!!!!!!!!!!!!!!!!!
         !Now reorder
         !!!!!!!!!!!!!!!!!!!!!!!!!!!
-        open(1, file=nameout)
-        do i=1, 2*timesteps-1
-            write(1,'(F, x, 2(e18.6E5, x))') vector2(i,1), vector2(i,2), vector2(i,3)
-        end do
-        close(1)
+        if(GammaType.eq.'exp')then
+            open(1, file=nameout)
+            do i=1, 2*timesteps-1
+                write(1,'(F, x, 2(e18.6E5, x))') vector2(i,1), vector2(i,2)*exp(-0.05d0*abs(vector2(i,1))), vector2(i,3)*exp(-0.05d0*abs(vector2(i,1)))
+            end do
+            close(1)
+        else
+            open(1, file=nameout)
+            do i=1, 2*timesteps-1
+                write(1,'(F, x, 2(e18.6E5, x))') vector2(i,1), vector2(i,2), vector2(i,3)
+            end do
+            close(1)
+        end if
     end if
 contains
     subroutine ReadInput(name, dim, rho, H, a1, a2,op1,op2,GF, nameout, verbose)
