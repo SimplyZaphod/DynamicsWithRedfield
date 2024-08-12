@@ -947,8 +947,6 @@ contains
         allocate(M_tot(dimsq, dimsq), M_L(dimsq, dimsq), M_U(dimsq, dimsq), ipiv(dimsq))
         call conjgtranspose(VLeft, VLeft, dimsq)
         call npmatmul_complex(M_tot, VLeft, VRight, dimsq, dimsq, dimsq)
-        write(*,*) 'M_TOT PRE'
-        call write_matrix_complex(M_tot, dimsq, dimsq, 'e7.1')
         call ZGETRF(dimsq, dimsq, M_tot, dimsq, ipiv, info)
         write(*,*) 'inversion info:', info
         write(*,*) 'ipiv:'

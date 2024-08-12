@@ -106,6 +106,7 @@ program RedfieldCorr
 
     if(.not.symm)then
         write(*,*) 'Select the dynamics!'
+        Deltat = t_f/timesteps
         if((DynType=='runge-kutta-unitary').or.(DynType=='RKU'))then
             call CorrelationWithRungeKuttaUnitary(op1,rho, H, dimension, Deltat, timesteps, nameout)
         elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then

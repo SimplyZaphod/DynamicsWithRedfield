@@ -99,7 +99,7 @@ module Evolutions
         doublecomplex, allocatable :: propts(:,:)
         character(len=50) :: spettro
         doublecomplex property
-
+        open(101,file='population.dat')
         do i=1, n_prop
             spettro= ''
             write(spettro,*) 'prop', i,'.dat'
@@ -122,6 +122,7 @@ module Evolutions
                     write(*,"(A, F12.4,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(trace_complex(rho, dim))
                     write(*,*) ' Population:'
                     write(*,'(<dim>(F7.3, X))') (real(rho(j,j)), j=1, dim)
+                    write(101,'(<dim+1>(F14.4, X))') Deltat*i, (real(rho(j,j)), j=1, dim)
                     if(n_prop.gt.0)then
                         allocate(propts(dim, dim))
                         do j=1, n_prop
@@ -149,6 +150,7 @@ module Evolutions
         do  i=1, n_prop
             close(i)
         end do
+        close(101)
     end subroutine EvolveWithRungeKuttaUnitary
 
     subroutine EvolveWithRungeKutta(rho, liouv, dim, Deltat, timesteps, name)
@@ -164,6 +166,8 @@ module Evolutions
         integer, intent(in) :: timesteps
         !> do you want to write? if "*" write on output, if name, write on filename
         character(len=*), optional :: name
+
+        open(101,file='population.dat')
         write(*,*) 'Start evolution with Runge Kutta'
         if(present(name))then
             write(*,*) 'Save at: ', name
@@ -180,6 +184,7 @@ module Evolutions
                     write(*,"(A, F12.4,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(trace_complex(rho, dim))
                     write(*,*) ' Population:'
                     write(*,'(<dim>(F7.3, X))') (real(rho(j,j)), j=1, dim)
+                    write(101,'(<dim+1>(F14.4, X))') Deltat*i, (real(rho(j,j)), j=1, dim)
 !                    call write_matrix_complex(rho, dim, dim, 'e11.3')
                     call Runge_Kutta_Liouville(rho, liouv, dim, Deltat)
                 end do
@@ -193,6 +198,7 @@ module Evolutions
             end do
         end if
         write(*,*) 'Evolved with Runge-Kutta!'
+        close(101)
     end subroutine EvolveWithRungeKutta
 
         subroutine EvolveWithRungeKuttaRedfield(rho, H, red, dim, Deltat, timesteps,n_prop, prop, name)
@@ -219,6 +225,7 @@ module Evolutions
         character(len=50) :: spettro
         doublecomplex property
 
+        open(101,file='population.dat')
         do i=1, n_prop
             spettro= ''
             write(spettro,*) 'prop', i,'.dat'
@@ -241,6 +248,7 @@ module Evolutions
                     write(*,"(A, F12.4,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(trace_complex(rho, dim))
                     write(*,*) ' Population:'
                     write(*,'(<dim>(F7.3, X))') (real(rho(j,j)), j=1, dim)
+                    write(101,'(<dim+1>(F14.4, X))') Deltat*i, (real(rho(j,j)), j=1, dim)
 !                    call write_matrix_complex(rho, dim, dim, 'e11.3')
                     if(n_prop.gt.0)then
                         allocate(propts(dim, dim))
@@ -269,6 +277,7 @@ module Evolutions
         do  i=1, n_prop
             close(i)
         end do
+            close(101)
     end subroutine EvolveWithRungeKuttaRedfield
 
     subroutine EvolveWithLiouvilleDiagonalization(rho, Liouv, dim, Deltat, timesteps, n_prop, prop,name)
@@ -297,6 +306,7 @@ module Evolutions
         character(len=50) :: spettro
         doublecomplex property
 
+        open(101, file='population.dat')
 
         dimsq = dim**2
         allocate(Lliouv(dimsq, dimsq), rhoLiouv(dimsq), rho_t(dimsq))
@@ -306,6 +316,7 @@ module Evolutions
         !Diagonalizing the liouvillian to obtain left eigenvectors {l_i}, right eigenvectors {r_i} and eigenvalues {\lambda_i}
         ! so that I can make use of |rho(t)> = \sum_i |l_i><r_i|rho(0)> exp^(t*\lambda_i)
         !!!!!!!!!!!!!!!
+        write(*,*) 'Call the routine that diagonalize the Liouvillian!'
         call LiovullianDiagonalization(LVec, RVec, Values, Lliouv, dimsq)
         !!!!!!!!!!!!!!!
         ! Projecting the rho into the left eigenstate
@@ -346,18 +357,19 @@ module Evolutions
                     do j=1, dim
                         tracee =tracee+ rho_t((j-1)*dim + j)
                     end do
-                    write(*,"(A, F12.4, A, F12.4)") 'Time: ', Deltat*i, ',trace= ', real(tracee)
-                    write(*,*) ' Population:'
-                    write(*,'(<dim>(F7.3, X))') (real(rho_t((j-1)*dim + j)), j=1, dim)
+
                     do j=1, dimsq
                         rho_t(j) = (0.d0, 0.d0)
                         do k=1, dimsq
                             rho_t(j) = rho_t(j) + RVec(j,k)*proj(k)*e_nepero**(Values(k)*i*Deltat)
                         end do
                     end do
-!                    do j=1, dim
-!                        write(*,'(<dim>(2(e11.4, x), x))') (rho_t((j-1)*dim+k), k=1, dim)
-!                    end do
+
+                    write(*,"(A, F12.4, A, F12.4)") 'Time: ', Deltat*i, ',trace= ', real(tracee)
+                    write(*,*) ' Population:'
+                    write(*,'(<dim>(F7.3, X))') (real(rho_t((j-1)*dim + j)), j=1, dim)
+                    write(101,'(<dim+1>(F10.3, X))') Deltat*i, (real(rho_t((j-1)*dim + j)), j=1, dim)
+
                     rho = ReturnOperatorsInRealSpace(rho_t, dim)
                     if(n_prop.gt.0)then
                         allocate(propts(dim, dim))
@@ -384,6 +396,7 @@ module Evolutions
         rho = ReturnOperatorsInRealSpace(rho_t, dim)
         write(*,*) 'Evolved with the Diagonalized Liouvillian!'
         deallocate(rhoLiouv, lLiouv, proj, RVec, LVec, Values, rho_t)
+        close(101)
     end subroutine EvolveWithLiouvilleDiagonalization
 
     subroutine EvolveWithArnoldi(rho, red, dim, nkrylov,Deltat, timesteps, n_prop, prop, name)
@@ -412,6 +425,7 @@ module Evolutions
         doublecomplex property
         character(len=50) spettro
 
+        open(101, file='population.dat')
         dimsq = dim**2
         allocate(Liouvillian(dimsq, dimsq), rhovec(dimsq))
         Liouvillian = ReturnSuperOperatorsInLiouvillian(red, dim)
@@ -453,6 +467,7 @@ module Evolutions
                     write(*,"(A, F12.4,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(property)
                     write(*,*) ' Population:'
                     write(*,'(<dim>(F7.3, X))') (real(rhovec((j-1)*dim+j)), j=1, dim)
+                    write(101,'(<dim+1>(F14.4, X))') Deltat*i, (real(rhovec((j-1)*dim+j)), j=1, dim)
 
                     if(n_prop.gt.0)then
                         do j=1, n_prop
@@ -482,6 +497,7 @@ module Evolutions
         write(*,*) 'Evolved with Runge-Kutta!'
         rho = ReturnOperatorsInRealSpace(rhovec, dim)
         deallocate(Liouvillian, rhovec)
+        close(101)
     end subroutine EvolveWithArnoldi
 
     subroutine CorrelationWithArnoldi(op1, rho, Liouv, dim,nkrylov, Deltat, timesteps, name)

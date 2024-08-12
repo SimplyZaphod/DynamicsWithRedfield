@@ -37,14 +37,14 @@ program RedfieldDA
     !!!!!!!!!!!!!!!!
     !All the necessary for cycles and weste
     !!!!!!!!!!!!!!!!
-    integer i,j
+    integer i,j, ii,jj
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! Let's read the input
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     write(*,*) 'Input name:'
     read(*,'(A100)') inputsystem
-    call ReadInput(inputsystem, dimension, rho, H, adag, ahat,n_prop, prop)
+    call ReadInput(inputsystem, dimension, rho, H, adag, ahat,n_prop, prop, 'v')
     write(*,*)
 
     !!!!!!!!!!!!!!!!!!!!!!!!
@@ -86,16 +86,32 @@ program RedfieldDA
     elseif((DynType=='runge-kutta-redfield').or.(DynType=='RKR'))then
         write(*,*) 'Writing redfield tensor'
         LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        write(*,*) 'Tensor written!'
         call EvolveWithRungeKuttaRedfield(rho, H, LiouvilleTensor, dimension, Deltat, timesteps, n_prop, prop, '*')
     elseif ((DynType=='arnoldi').or.(DynType=='A'))then
         write(*,*) 'No krylov dimension is inserted! 20 is taken as a guess'
         write(*,*) 'Writing redfield tensor'
         LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+        write(*,*) 'Tensor written!'
+        write(*,*) 'Moving to the Liouvillian space...'
         LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
         call EvolveWithArnoldi(rho, LiouvilleTensor, dimension, 20, Deltat, timesteps, n_prop, prop, '*')
     elseif ((DynType=='D').or.(DynType=='diag'))then
         write(*,*) 'Writing redfield tensor'
         LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
+!        write(*,*) 'DEBUGGGGG ROTATING WAVE APPROXIMATION AND IT BECOMES LINDBLAD'
+!        write(*,*) 'DEBUGGGGG ROTATING WAVE APPROXIMATION AND IT BECOMES LINDBLAD'
+!        write(*,*) 'DEBUGGGGG ROTATING WAVE APPROXIMATION AND IT BECOMES LINDBLAD'
+!        call RotatingWaveApproximation_complex(LiouvilleTensor, dimension)
+!        open(301,file='Red.dat')
+!        do i=1, 4
+!            do j=1, 4
+!                write(301,'(16(e11.4,X,e11.4,3X))') LiouvilleTensor(i,j,1,1),LiouvilleTensor(i,j,1,2),LiouvilleTensor(i,j,1,3),LiouvilleTensor(i,j,1,4),LiouvilleTensor(i,j,2,1),LiouvilleTensor(i,j,2,2),LiouvilleTensor(i,j,2,3),LiouvilleTensor(i,j,2,4),LiouvilleTensor(i,j,3,1),LiouvilleTensor(i,j,3,2),LiouvilleTensor(i,j,3,3),LiouvilleTensor(i,j,3,4),LiouvilleTensor(i,j,4,1),LiouvilleTensor(i,j,4,2),LiouvilleTensor(i,j,4,3),LiouvilleTensor(i,j,4,4)
+!            end do
+!        end do
+!        close(301)
+        write(*,*) 'Tensor written!'
+        write(*,*) 'Moving to the Liouvillian space...'
         LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
         call EvolveWithLiouvilleDiagonalization(rho, LiouvilleTensor, dimension, Deltat, timesteps, n_prop, prop,'*')
     end if
