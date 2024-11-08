@@ -46,7 +46,13 @@ program RedfieldCorr
     !All the necessary for cycles and weste
     !!!!!!!!!!!!!!!!
     integer i,j
-
+    doubleprecision waste
+    doublecomplex,allocatable :: WMComplex(:,:)
+    !!!!!!!!!!!!!!!!!!!
+    !Diagonalization variable
+    !!!!!!!!!!!!!!!!!!!
+    doublecomplex, allocatable :: work(:)
+    doubleprecision, allocatable :: rwork(:)
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! Let's read the input
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -54,6 +60,29 @@ program RedfieldCorr
     read(*,'(A100)') inputsystem
     call ReadInput(inputsystem, dimension, rho, H, adag, ahat, op1, op2, selGF,nameout,verbose='v')
     write(*,*)
+        write(*,*) 'Diagonalize? Check the Hamiltonian...'
+    do i=1, dimension
+        do j=1, dimension
+            if (i.ne.j) waste = waste + dreal(conjg(H(i,j))*H(i,j))
+        end do
+    end do
+    waste = dsqrt(waste)/((dimension-1)*dimension)
+    if (waste > 1.d-10) then
+        write(*,*) 'Not diagonal! Diagonalize...'
+        allocate(WMComplex(dimension, dimension), eigenvalues(dimension))
+        allocate(work(3*dimension), rwork(3*dimension-2))
+        call zheev('N', 'V', dimension, WMComplex, dimension, eigenvalues,work, 3*dimension, rwork, i)
+        write(*,*) 'Diagonalized! Now I rotate everything'
+        call rotate_matrix_complex(H, WMComplex, dimension)
+        call rotate_matrix_complex(rho, WMComplex, dimension)
+        call rotate_matrix_complex(adag, WMComplex, dimension)
+        call rotate_matrix_complex(ahat, WMComplex, dimension)
+        write(*,*) 'End! Deallocate'
+        deallocate(work, rwork, WMComplex, eigenvalues)
+    else
+        write(*,*) 'H is diagonal! Every possible error is related to the input file and not on the diagonalization...'
+    end if
+
     allocate(eigenvalues(dimension))
     do i=1, dimension
         eigenvalues(i) = real(H(i,i))
@@ -292,22 +321,22 @@ contains
         allocate(rho(dim,dim), H(dim,dim), a1(dim, dim), a2(dim, dim),&
         op1(dim,dim), op2(dim,dim))
 
-        open(1,file=rhoname, form='unformatted')
+        open(1,file=rhoname, form='unformatted', access='stream')
         read(1) rho(1:,1:)
         close(1)
-        open(1,file=Hname, form='unformatted')
+        open(1,file=Hname, form='unformatted', access='stream')
         read(1) H(1:,1:)
         close(1)
-        open(1,file=a1name, form='unformatted')
+        open(1,file=a1name, form='unformatted', access='stream')
         read(1) a1(1:,1:)
         close(1)
-        open(1,file=a2name, form='unformatted')
+        open(1,file=a2name, form='unformatted', access='stream')
         read(1) a2(1:,1:)
         close(1)
-        open(1,file=op1name, form='unformatted')
+        open(1,file=op1name, form='unformatted', access='stream')
         read(1) op1(1:,1:)
         close(1)
-        open(1,file=op2name, form='unformatted')
+        open(1,file=op2name, form='unformatted', access='stream')
         read(1) op2(1:,1:)
         close(1)
 
