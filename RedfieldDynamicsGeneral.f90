@@ -143,6 +143,9 @@ program RedfieldDA
         LiouvilleTensor = RedfieldTensor_Complex(adag, ahat, gammas, density, eigenvalues, dimension)
         LiouvilleTensor = Liouvillian_Complex(H, LiouvilleTensor, dimension)
         call EvolveWithLiouvilleDiagonalization(rho, LiouvilleTensor, dimension, Deltat, timesteps, n_prop, prop,'*')
+    elseif ((DynType=='U').or.(DynType=='Unitary'))then
+        write(*,*) 'No redfield tensor! Coherences only!'
+        call EvolveWithUnitary(rho, H, dimension, Deltat, timesteps, n_prop, prop,'*')
     end if
     write(*,*) "After the evolution"
     call write_matrix_complex(rho, dimension, dimension, 'e9.2')

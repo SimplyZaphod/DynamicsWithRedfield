@@ -1142,6 +1142,33 @@ contains
         end do
     end subroutine Runge_Kutta_Unitary
 
+    subroutine Unitary_Evolution(rho,H, dim,timestep, n_timesteps)
+        !> integer dimension of the operators
+        integer, intent(in) :: dim
+        !> complex operator or complex matrix of dimension(dim, dim) to be evolvedù
+        doublecomplex, intent(inout) :: rho(dim,dim)
+        !> doubleprecision timestep
+        doubleprecision, intent(in) :: timestep
+        !> doublecomplex hamiltonian of dimension (dim, dim)
+        doublecomplex, intent(in) :: H(dim, dim)
+        !> integer number of timesteps before the output
+        integer, intent(in) :: n_timesteps
+
+        integer i,j, i_time
+        doubleprecision hbar_evfs, omega_ij
+
+        hbar_evfs = hbar_ev*1.d15
+        do i=1,dim
+            do j=1,dim
+                omega_ij = (H(i,i)-H(j,j))/hbar_evfs
+                rho(i,j) = rho(i,j)*zexp(-imagine*omega_ij*timestep*n_timesteps)
+                if(i==1.and.j==3) write(*,*) rho(i,j)
+            end do
+        end do
+    end subroutine Unitary_Evolution
+
+
+
     !> Unitary time evolution with the Runge-Kutta algorithm
     !> @note timestep and val must be inserted in femtosecond
     subroutine Runge_Kutta_Redfield(rho,H, red, dim,timestep, n_timesteps)

@@ -151,6 +151,81 @@ module Evolutions
         end do
     end subroutine EvolveWithRungeKuttaUnitary
 
+    subroutine EvolveWithUnitary(rho, H, dim, Deltat, timesteps,n_prop, prop, name)
+        !> integer dimension of all the operator
+        integer, intent(in) :: dim
+        !> doublecomplex(dim, dim) density matrix to be evolved
+        doublecomplex, intent(inout) :: rho(dim,dim)
+        !> doublecomplex(dim,dim) Hamiltonian
+        doublecomplex, intent(in) :: H(dim,dim)
+        !> doubleprecision timesteps in femtoseconds
+        doubleprecision, intent(in) :: Deltat
+        !> integer number of timesteps
+        integer, intent(in) :: timesteps
+        !>integer additional numbero f properties i want to calculate
+        integer, intent(in) :: n_prop
+        !> doublecomplex (n_prop, dim, dim) matrix of properties
+        doublecomplex, intent(in) :: prop(n_prop, dim, dim)
+        !> do you want to write? if "*" write on output, if name, write on filename
+        character(len=*), optional :: name
+
+        doublecomplex, allocatable :: propts(:,:)
+        character(len=50) :: spettro
+        doublecomplex property
+
+        do i=1, n_prop
+            spettro= ''
+            write(spettro,*) 'prop', i,'.dat'
+            call StripSpaces(spettro)
+            open(i, file=spettro)
+        end do
+        write(*,*) 'Start unitary evolution'
+        if(present(name))then
+            write(*,*) 'Save at: ', name
+            if(name.ne."*")then
+                open(1, file=name, form='unformatted')
+                do i=0, timesteps-1
+                    write(1) rho(1:,1:)
+                    call Unitary_Evolution(rho, H, dim, Deltat,1)
+                end do
+                write(1) rho(1:,1:)
+                close(1)
+            else
+                do i=0, timesteps-1
+                    write(*,"(A, F12.4,A,F12.4)") 'Time: ', Deltat*i, ',trace= ', real(trace_complex(rho, dim))
+                    write(*,*) ' Population:'
+                    write(*,'(<dim>(F7.3, X))') (real(rho(j,j)), j=1, dim)
+                    if(n_prop.gt.0)then
+                        allocate(propts(dim, dim))
+                        do j=1, n_prop
+                            propts = prop(j,:,:)
+                            call npmatmul_complex(propts, propts, rho, dim, dim, dim)
+                            property = trace_complex(propts, dim)
+                            write(*,'(A, I2)') 'Property number ', j
+                            write(*,'(A, e18.6E5, 2X, e18.6E5)') "Value ", real(property), aimag(property)
+                            write(j,'(F12.4, x, e18.6E5, x, e18.6E5)') Deltat*i, real(property), aimag(property)
+                        end do
+                        deallocate(propts)
+                    end if
+                    call Unitary_Evolution(rho, H, dim, Deltat,1)
+                end do
+                write(*,"(A, F12.4)") 'Time: ', Deltat*(i+1)
+                call write_matrix_complex(rho, dim, dim, 'e11.3')
+                write(*,*)
+            end if
+        else
+            do i=0, timesteps-1
+                call Unitary_Evolution(rho, H, dim, Deltat,1)
+            end do
+        end if
+        write(*,*) 'Evolved with Unitary Evolution!'
+        do  i=1, n_prop
+            close(i)
+        end do
+    end subroutine EvolveWithUnitary
+
+
+
     subroutine EvolveWithRungeKutta(rho, liouv, dim, Deltat, timesteps, name)
         !> integer dimension of all the operator
         integer, intent(in) :: dim
